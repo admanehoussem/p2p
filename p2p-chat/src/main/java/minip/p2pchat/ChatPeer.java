@@ -4,8 +4,18 @@ import java.io.*;
 import java.net.*;
 import java.util.concurrent.*;
 import java.util.*;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 
 public class ChatPeer {
+    // ANSI Colors for UI
+    public static final String RESET = "\u001B[0m";
+    public static final String RED = "\u001B[31m";
+    public static final String GREEN = "\u001B[32m";
+    public static final String YELLOW = "\u001B[33m";
+    public static final String BLUE = "\u001B[34m";
+    public static final String CYAN = "\u001B[36m";
+
     private final int listenPort;
     private ServerSocket serverSocket;
     private final CopyOnWriteArrayList<Socket> peers = new CopyOnWriteArrayList<>();
@@ -18,7 +28,9 @@ public class ChatPeer {
 
     public void start() throws IOException {
         serverSocket = new ServerSocket(listenPort);
-        System.out.println("Listening on port " + listenPort);
+        System.out.println(YELLOW + "=== P2P Chat Node Started ===" + RESET);
+        System.out.println(YELLOW + "Listening on port " + listenPort + RESET);
+        showHelp();
         executor.submit(this::acceptLoop);
         consoleThread = new Thread(this::consoleLoop);
         consoleThread.setDaemon(false);
@@ -30,7 +42,7 @@ public class ChatPeer {
             try {
                 Socket s = serverSocket.accept();
                 peers.add(s);
-                System.out.println("Peer connected: " + s.getRemoteSocketAddress());
+                System.out.println(YELLOW + "Peer connected: " + s.getRemoteSocketAddress() + RESET);
                 executor.submit(() -> readLoop(s));
             } catch (IOException e) {
                 if (running) e.printStackTrace();
@@ -42,7 +54,8 @@ public class ChatPeer {
         try (BufferedReader in = new BufferedReader(new InputStreamReader(s.getInputStream()))) {
             String line;
             while ((line = in.readLine()) != null) {
-                String formattedMsg = "[From " + s.getRemoteSocketAddress() + "] " + line;
+                String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss"));
+                String formattedMsg = BLUE + "[" + timestamp + "] " + s.getRemoteSocketAddress() + ": " + line + RESET;
                 System.out.println(formattedMsg);
                 // Store received message in history
                 messageHistory.add(formattedMsg);
@@ -52,7 +65,7 @@ public class ChatPeer {
         } finally {
             peers.remove(s);
             try { s.close(); } catch (IOException ignore) {}
-            System.out.println("Peer disconnected: " + s.getRemoteSocketAddress());
+            System.out.println(YELLOW + "Peer disconnected: " + s.getRemoteSocketAddress() + RESET);
         }
     }
 
@@ -77,10 +90,17 @@ public class ChatPeer {
                     break;
                 } else if (line.equals("/history")) {
                     showHistory();
+                } else if (line.equals("/peers")) {
+                    listPeers();
+                } else if (line.equals("/help")) {
+                    showHelp();
                 } else if (!line.trim().isEmpty()) {
                     broadcast(line);
                     // Store sent message in history
-                    messageHistory.add("[Sent] " + line);
+                    String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss"));
+                    String formattedMsg = GREEN + "[" + timestamp + "] Me: " + line + RESET;
+                    System.out.println(formattedMsg);
+                    messageHistory.add(formattedMsg);
                 }
             }
         } catch (Exception e) {
@@ -92,10 +112,10 @@ public class ChatPeer {
         try {
             Socket s = new Socket(host, port);
             peers.add(s);
-            System.out.println("Connected to " + s.getRemoteSocketAddress());
+            System.out.println(YELLOW + "Connected to " + s.getRemoteSocketAddress() + RESET);
             executor.submit(() -> readLoop(s));
         } catch (IOException e) {
-            System.out.println("Failed to connect: " + e.getMessage());
+            System.out.println(RED + "Failed to connect: " + e.getMessage() + RESET);
         }
     }
 
@@ -127,6 +147,29 @@ public class ChatPeer {
             }
         }
         System.out.println("=======================\n");
+    }
+
+    private void listPeers() {
+        System.out.println("\n=== Connected Peers ===");
+        if (peers.isEmpty()) {
+            System.out.println("No peers connected.");
+        } else {
+            for (Socket s : peers) {
+                System.out.println("- " + s.getRemoteSocketAddress());
+            }
+        }
+        System.out.println("=======================\n");
+    }
+
+    private void showHelp() {
+        System.out.println(CYAN + "\n=== Available Commands ===" + RESET);
+        System.out.println("/connect <host> <port> - Connect to a peer");
+        System.out.println("/peers                 - List connected peers");
+        System.out.println("/history               - Show message history");
+        System.out.println("/help                  - Show this help message");
+        System.out.println("/exit                  - Exit the application");
+        System.out.println("Any other text will be broadcasted to all peers.");
+        System.out.println(CYAN + "==========================\n" + RESET);
     }
 
     private void shutdown() {
